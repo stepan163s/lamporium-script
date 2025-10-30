@@ -3,12 +3,12 @@
     'use strict';
 
     var network = new Lampa.Reguest();
-    var API_BASE = (Lampa.Storage.get('kinorium_api_base') || 'https://stepan163.ru').replace(/\/$/, '');
+    var API_BASE = (Lampa.Storage.get('kinorium_api_base') || 'http://104.164.54.178:5000').replace(/\/$/, '');
 
     function requestKinoriumUserId(callback) {
         Lampa.Input.edit({
             free: true,
-            title: 'Введите ID пользователя Кинориума',
+            title: 'Введите ID пользователя Кинориума2',
             nosave: true,
             value: '',
             layout: 'default',
@@ -151,7 +151,7 @@
         Lampa.SettingsApi.addParam({ component: 'kinorium', param: { type: 'title' }, field: { name: 'Аккаунт' } });
         Lampa.SettingsApi.addParam({ component: 'kinorium', param: { type: 'button', name: 'kinorium_set_user_id' }, field: { name: 'Указать ID пользователя', description: 'Установить ID пользователя Кинориума' }, onChange: () => { requestKinoriumUserId(); } });
         Lampa.SettingsApi.addParam({ component: 'kinorium', param: { type: 'title' }, field: { name: 'API' } });
-        Lampa.SettingsApi.addParam({ component: 'kinorium', param: { type: 'input', name: 'kinorium_api_base' }, field: { name: 'Адрес backend', description: 'Например https://stepan163.ru' }, onChange: () => {} });
+        Lampa.SettingsApi.addParam({ component: 'kinorium', param: { type: 'input', name: 'kinorium_api_base' }, field: { name: 'Адрес backend', description: 'Например http://104.164.54.178:5000' }, onChange: () => {} });
         Lampa.SettingsApi.addParam({ component: 'kinorium', param: { type: 'title' }, field: { name: 'Список "Буду смотреть"' } });
         Lampa.SettingsApi.addParam({ component: 'kinorium', param: { name: 'kinorium_add_to_favorites', type: 'trigger', default: false }, field: { name: 'Добавлять в Избранное', description: 'Будущие релизы — в список Позже' } });
         Lampa.SettingsApi.addParam({ component: 'kinorium', param: { type: 'button', name: 'kinorium_delete_cache' }, field: { name: 'Очистить кэш фильмов', description: 'Необходимо при возникновении проблем' }, onChange: () => { Lampa.Storage.set('kinorium_movies', []); Lampa.Noty.show('Кэш Кинориума очищен'); } });
@@ -159,5 +159,3 @@
 
     if(!window.kinorium_ready){ window.kinorium_ready = true; startPlugin(); }
 })();
-
-
