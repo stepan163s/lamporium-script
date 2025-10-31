@@ -33,7 +33,7 @@
     function requestKinoriumUserId(callback) {
         Lampa.Input.edit({
             free: true,
-            title: 'Введите ID пользователя Кинориума4',
+            title: 'Введите ID пользователя Кинориума5',
             nosave: true,
             value: '',
             layout: 'default',
@@ -88,7 +88,7 @@
                 if (!existsInLocalStorage) {
                     const movieType = isSerial ? 'tv' : 'movie';
                     const searchTitle = originalTitle || russianTitle || '';
-                    var url = tmdbBase + '/3/search/' + movieType +
+                    var url = 'https://tmdb.cub.red/3/search/' + movieType +
                         '?query=' + encodeURIComponent(searchTitle) +
                         '&api_key=4ef0d7355d9ffb5151e987764708ce96' +
                         (year ? '&year=' + year : '') +
@@ -100,6 +100,7 @@
                     network.silent(url, function(data) {
                         try {
                             if (data && (data.results && data.results[0] || data.movie_results && data.movie_results[0] || data.tv_results && data.tv_results[0])) {
+                                console.log('Kinorium TMDB OK:', url);
                                 var movieItem = null;
                                 if (data.results && data.results[0]) movieItem = data.results[0];
                                 else if (data.movie_results && data.movie_results[0]) movieItem = data.movie_results[0];
