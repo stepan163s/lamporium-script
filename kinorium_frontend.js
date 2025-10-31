@@ -1,15 +1,11 @@
 (function() {
     'use strict';
 
-    // network instance will be created where needed (after appready)
-    // fallback базовый адрес API бекенда (пользовательская настройка через Settings)
     var API_BASE = (Lampa.Storage.get('kinorium_api_base') || 'https://stepan163.ru').replace(/\/$/, '');
 
-    // --- Вспомогательные функции ---
     function getTmdbBase() {
         try {
-            var proto = (typeof location !== 'undefined' && location.protocol === 'http:') ? 'http://' : 'https://';
-            return proto + 'tmdb.cub.red';
+            return Lampa.Utils.protocol() + 'tmdb.' + Lampa.Manifest.cub_domain;
         } catch (e) {
             return 'https://tmdb.cub.red';
         }
@@ -26,7 +22,7 @@
     function requestKinoriumUserId(callback) {
         Lampa.Input.edit({
             free: true,
-            title: 'Введите ID пользователя Кинориума8',
+            title: 'Введите ID пользователя Кинориума9',
             nosave: true,
             value: '',
             layout: 'default',
@@ -62,7 +58,6 @@
             }
 
             var kinoriumMovies = safeParseStorage('kinorium_movies', []);
-            // keep only items that still exist in received list
             const receivedMovieIds = new Set(movies.map(m => String(m.id || m.kinorium_id)));
             kinoriumMovies = kinoriumMovies.filter(movie => receivedMovieIds.has(String(movie.kinorium_id)));
             Lampa.Storage.set('kinorium_movies', JSON.stringify(kinoriumMovies));
@@ -82,33 +77,49 @@
                 if (!existsInLocalStorage) {
                     const movieType = isSerial ? 'tv' : 'movie';
                     const searchTitle = originalTitle || russianTitle || '';
-                    var url = tmdbBase + '/3/search/multi' +
-                        '?query=' + encodeURIComponent(searchTitle) +
-                        '&api_key=4ef0d7355d9ffb5151e987764708ce96' +
-                        (year ? '&year=' + year : '') +
-                        '&language=ru';
+
+                    // ФОРМИРУЕМ URL КАК В РАБОЧЕМ СКРИПТЕ
+                    var url;
+                    if (movieType === 'movie') {
+                        url = tmdbBase + '/3/search/movie?query=' + encodeURIComponent(searchTitle) + 
+                              '&api_key=4ef0d7355d9ffb5151e987764708ce96' + 
+                              (year ? '&year=' + year : '') + 
+                              '&language=ru';
+                    } else {
+                        url = tmdbBase + '/3/search/tv?query=' + encodeURIComponent(searchTitle) + 
+                              '&api_key=4ef0d7355d9ffb5151e987764708ce96' + 
+                              (year ? '&year=' + year : '') + 
+                              '&language=ru';
+                    }
 
                     console.log('Kinorium', 'TMDB search URL:', url);
 
-                    // Запрос на TMDB
+                    // Запрос на TMDB - ТОЧНО КАК В РАБОЧЕМ СКРИПТЕ
                     network.silent(url, function(data) {
                         try {
-                            if (!data || !data.results) {
+                            if (!data) {
                                 console.error('Kinorium', 'TMDB пустой ответ', data);
                                 calculateProgress(movies.length, processedItems++);
                                 return;
                             }
-                            if (data && (data.results && data.results[0] || data.movie_results && data.movie_results[0] || data.tv_results && data.tv_results[0])) {
-                                console.log('Kinorium TMDB OK:', url);
-                                var movieItem = null;
-                                if (data.results && data.results[0]) movieItem = data.results[0];
-                                else if (data.movie_results && data.movie_results[0]) movieItem = data.movie_results[0];
-                                else if (data.tv_results && data.tv_results[0]) movieItem = data.tv_results[0];
 
-                                var movieDateStr = movieItem.release_date || movieItem.first_air_date || '';
+                            // ОБРАБОТКА ОТВЕТА КАК В РАБОЧЕМ СКРИПТЕ
+                            var movieItem = null;
+                            
+                            if (data.movie_results && data.movie_results[0]) {
+                                movieItem = data.movie_results[0];
+                            } else if (data.tv_results && data.tv_results[0]) {
+                                movieItem = data.tv_results[0];
+                            } else if (data.results && data.results[0]) {
+                                movieItem = data.results[0];
+                            }
+
+                            if (movieItem) {
+                                console.log('Kinorium', 'TMDB id found: ' + movieItem.id + ' for kinorium id: ' + kinorium_id);
+
+                                var movieDateStr = movieItem.release_date || movieItem.first_air_date;
                                 var movieDate = movieDateStr ? new Date(movieDateStr) : new Date();
 
-                                // если дата релиза в прошлом или нет даты — добавляем
                                 if (!movieDateStr || movieDate <= new Date()) {
                                     movieItem.kinorium_id = kinorium_id;
                                     movieItem.source = "tmdb";
@@ -116,12 +127,13 @@
                                     kinoriumMovies.unshift(movieItem);
                                     Lampa.Storage.set('kinorium_movies', JSON.stringify(kinoriumMovies));
                                 } else {
+                                    console.log('Kinorium', 'Movie or TV with kinorium id ' + kinorium_id + ' not released yet, release date:', movieDate);
                                     if (Lampa.Storage.get('kinorium_add_to_favorites', false)) {
                                         Lampa.Favorite.add('wath', movieItem, 100);
                                     }
                                 }
                             } else {
-                                console.log('Kinorium', 'TMDB returned no results for', searchTitle, data);
+                                console.log('Kinorium', 'No result found for ' + searchTitle + ', ' + year, data);
                             }
                         } catch (e) {
                             console.error('Kinorium', 'Error processing TMDB response', e);
@@ -130,7 +142,7 @@
                     }, function(err) {
                         console.error('Kinorium', 'TMDB request error:', err, 'URL:', url);
                         calculateProgress(movies.length, processedItems++);
-                    }, null, { type: 'get', crossdomain: true });
+                    });
                 } else {
                     calculateProgress(movies.length, processedItems++);
                 }
@@ -149,7 +161,6 @@
             return;
         }
 
-        // отложим до appready, если ещё не готово (чтобы Manifest/cub_domain точно был доступен)
         if (!window.appready) {
             Lampa.Listener.follow('app', function(e) {
                 if (e.type == 'ready') getKinoriumData();
@@ -195,9 +206,8 @@
             });
         }
 
-        // сразу возвращаем результат из локального кэша (как было в исходнике)
         try {
-            oncomplete({ secuses: true, page: 1, results: Lampa.Storage.get('kinorium_movies', []) });
+            oncomplete({ secuses: true, page: 1, results: safeParseStorage('kinorium_movies', []) });
         } catch (e) {
             console.error('Kinorium', 'Error calling oncomplete', e);
             oncomplete({ secuses: true, page: 1, results: [] });
@@ -216,7 +226,7 @@
 
     function startPlugin() {
         var manifest = { type: 'video', version: '0.4.0', name: 'Кинориум', description: '', component: 'kinorium' };
-        // push manifest в список плагинов
+        
         if (!Lampa.Manifest.plugins) Lampa.Manifest.plugins = [];
         Lampa.Manifest.plugins.push(manifest);
         Lampa.Component.add('kinorium', component);
