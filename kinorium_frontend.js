@@ -26,7 +26,7 @@
     function requestKinoriumUserId(callback) {
         Lampa.Input.edit({
             free: true,
-            title: 'Введите ID пользователя Кинориума6',
+            title: 'Введите ID пользователя Кинориума7',
             nosave: true,
             value: '',
             layout: 'default',
@@ -125,7 +125,7 @@
                     }, function(err) {
                         console.error('Kinorium', 'TMDB request error:', err, 'URL:', url);
                         calculateProgress(movies.length, processedItems++);
-                    }, null, { type: 'get' });
+                    }, null, { type: 'get', crossdomain: true });
                 } else {
                     calculateProgress(movies.length, processedItems++);
                 }
@@ -158,6 +158,11 @@
         console.log('Kinorium', 'Requesting kinorium backend:', url, 'payload:', payload);
 
         network.silent(url, function(json) {
+            if (!json) {
+                console.error('Kinorium', 'Empty response from backend');
+                Lampa.Noty.show('Бэкенд вернул пустой ответ');
+                return;
+            }
             try {
                 processKinoriumDataFromJson(json);
             } catch (e) {
@@ -168,7 +173,7 @@
             console.error('Kinorium', 'Ошибка при получении данных с бэкенда Кинориума', err);
             Lampa.Noty.show('Ошибка при получении данных с бэкенда Кинориума');
         }, JSON.stringify(payload), {
-            method: 'POST',
+            type: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
     }
@@ -194,7 +199,7 @@
         }
     }
 
-    function clear() { network.clear(); }
+    function clear() {}
     var Api = { full: full, clear: clear };
 
     function component(object) {
