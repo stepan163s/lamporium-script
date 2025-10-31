@@ -1,6 +1,25 @@
 (function() {
     'use strict';
-    var network = new Lampa.Request();
+    var network = new Lampa.Reguest();
+
+    function requestKinoriumUserId(callback) {
+        Lampa.Input.edit({
+            free: true,
+            title: 'Введите ID пользователя Кинориума',
+            nosave: true,
+            value: '',
+            layout: 'default',
+            keyboard: 'lampa'
+        }, function(input) {
+            if (input) {
+                Lampa.Storage.set('kinorium_user_id', input);
+                Lampa.Noty.show('ID пользователя сохранен');
+                if (callback) callback();
+            } else {
+                Lampa.Noty.show('ID пользователя не введен');
+            }
+        });
+    }
 
     function calculateProgress(total, current) {
         if(total == current) {
@@ -124,7 +143,7 @@
         var userId = Lampa.Storage.get('kinorium_user_id', '');
         
         if (!userId) {
-            Lampa.Noty.show('Укажите ID пользователя Кинориума в настройках');
+            requestKinoriumUserId(getKinoriumData);
             return;
         }
         
@@ -141,6 +160,10 @@
         var userId = Lampa.Storage.get('kinorium_user_id', '');
         if(userId) {
             getKinoriumData();
+        } else {
+            requestKinoriumUserId(function() {
+                getKinoriumData();
+            });
         }
         oncomplete({
             "secuses": true,
@@ -166,33 +189,6 @@
             Api.full(object, resolve.bind(comp), reject.bind(comp));
         };
         return comp;
-    }
-
-    // Функция для ввода ID пользователя через диалоговое окно
-    function inputUserId(title) {
-        var currentUserId = Lampa.Storage.get('kinorium_user_id', '');
-        
-        Lampa.Input.edit({
-            free: true,
-            title: title,
-            nosave: true,
-            value: currentUserId,
-            layout: 'default',
-            keyboard: 'lampa'
-        }, function(input) {
-            if (input) {
-                Lampa.Storage.set('kinorium_user_id', input);
-                Lampa.Noty.show('ID пользователя установлен');
-                
-                // Обновляем отображение в настройках
-                setTimeout(function() {
-                    var element = $('div[data-name="kinorium_set_user_id"]');
-                    if (element.length) {
-                        element.find('.settings-param__name').text('ID: ' + input);
-                    }
-                }, 100);
-            }
-        });
     }
 
     function startPlugin() {
@@ -225,9 +221,7 @@
             });
         }
 
-        // SETTINGS
-        window.lampa_settings = window.lampa_settings || {};
-        
+        // SETTINGS - измененная структура
         if(!window.lampa_settings.kinorium) {
             Lampa.SettingsApi.addComponent({
                 component: 'kinorium',
@@ -246,8 +240,6 @@
             }
         });
         
-        // Заменяем текстовое поле на кнопку с диалоговым вводом
-        var currentUserId = Lampa.Storage.get('kinorium_user_id', '');
         Lampa.SettingsApi.addParam({
             component: 'kinorium',
             param: {
@@ -255,11 +247,11 @@
                 name: 'kinorium_set_user_id'
             },
             field: {
-                name: currentUserId ? 'ID: ' + currentUserId : 'Установить ID пользователя',
-                description: 'Нажмите чтобы установить ваш ID пользователя Кинориум'
+                name: 'Указать ID пользователя',
+                description: 'Установить ID пользователя Кинориума'
             },
-            onChange: function() {
-                inputUserId('Введите ID пользователя Кинориум');
+            onChange: () => {
+                requestKinoriumUserId();
             }
         });
         
@@ -290,34 +282,17 @@
             component: 'kinorium',
             param: {
                 type: 'button',
-                name: 'kinorium_refresh'
-            },
-            field: {
-                name: 'Обновить список',
-                description: 'Загрузить актуальный список фильмов'
-            },
-            onChange: function() {
-                getKinoriumData();
-            }
-        });
-        
-        Lampa.SettingsApi.addParam({
-            component: 'kinorium',
-            param: {
-                type: 'button',
                 name: 'kinorium_delete_cache'
             },
             field: {
                 name: 'Очистить кэш фильмов',
                 description: 'Необходимо при возникновении проблем'
             },
-            onChange: function() {
+            onChange: () => {
                 Lampa.Storage.set('kinorium_movies', []);
                 Lampa.Noty.show('Кэш Кинориума очищен');
             }
         });
-        
-        window.lampa_settings.kinorium = true;
     }
     
     if(!window.kinorium_ready) {
