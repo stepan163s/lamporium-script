@@ -1,10 +1,10 @@
 (function() {
     'use strict';
-    var network = new Lampa.Reguest();
+    var network = new Lampa.Request();
 
     function calculateProgress(total, current) {
         if(total == current) {
-            Lampa.Noty.show('Обновление списка фильмов Кинориума завершено (' + String(total) + ')');
+            Lampa.Noty.show('Обновление списка фильмов Кинориума завершено');
             if(Lampa.Storage.get('kinorium_launched_before', false) == false) {
                 Lampa.Storage.set('kinorium_launched_before', true);
                 Lampa.Activity.push({
@@ -17,233 +17,141 @@
         }
     }
 
-    function processKinoriumData(data) {
-        if(data && data.movies) {
-            var kinoriumMovies = Lampa.Storage.get('kinorium_movies', []);
-            var receivedMovies = data.movies;
-            var receivedMoviesCount = receivedMovies.length;
-            console.log('Kinorium', "Movies received count: " + String(receivedMoviesCount));
-            if(receivedMoviesCount == 0) {
-                Lampa.Noty.show('В списке "Буду смотреть" Кинориума нет фильмов');
-            }
-            const receivedMovieIds = new Set(receivedMovies.map(m => String(m.id)));
-            kinoriumMovies = kinoriumMovies.filter(movie => receivedMovieIds.has(String(movie.kinorium_id)));
-            Lampa.Storage.set('kinorium_movies', JSON.stringify(kinoriumMovies));
-            let processedItems = 1;
-            receivedMovies.forEach(m => {
-                const existsInLocalStorage = kinoriumMovies.some(km => km.kinorium_id === String(m.id));
-                if (!existsInLocalStorage) {
-                    var title = m.originalTitle || m.russianTitle;
-                    console.log('Kinorium', 'Getting details for movie: ' + String(m.id) + ', movie title: ' + title);
-                    
-                    var movieTitle = m.originalTitle || m.russianTitle;
-                    var movieType = m.isSerial ? 'tv' : 'movie';
-                    var movieYear = m.year;
-                    
-                    // Ищем через Alloha API по названию
-                    var allohaUrl = 'https://api.alloha.tv/?token=04941a9a3ca3ac16e2b4327347bbc1&name=' + encodeURIComponent(movieTitle);
-                    
-                    console.log('Kinorium', 'Searching in Alloha: ' + allohaUrl);
-                    
-                    network.silent(allohaUrl, function(allohaData) {
-                        if (allohaData && allohaData.data) {
-                            var movieTMDBid = allohaData.data.id_tmdb;
-                            var foundMovieTitle = allohaData.data.original_name || allohaData.data.name;
-                            var foundMovieYear = allohaData.data.year;
-                            
-                            console.log('Kinorium', 'Alloha found: ' + foundMovieTitle + ' (' + foundMovieYear + '), TMDB ID: ' + movieTMDBid);
-                            
-                            var url;
-                            if (movieTMDBid) {
-                                // Если нашли TMDB ID через Alloha, получаем детали по ID
-                                url = Lampa.Utils.protocol() + 'tmdb.'+ Lampa.Manifest.cub_domain +'/3/' + movieType + '/' + String(movieTMDBid) + '?api_key=4ef0d7355d9ffb5151e987764708ce96&language=ru';
-                                console.log('Kinorium', 'Getting TMDB details by ID: ' + url);
-                            } else {
-                                // Если не нашли TMDB ID, ищем по названию
-                                if (movieType === 'movie') {
-                                    url = Lampa.Utils.protocol() + 'tmdb.'+ Lampa.Manifest.cub_domain +'/3/search/movie?query=' + encodeURIComponent(movieTitle) + '&api_key=4ef0d7355d9ffb5151e987764708ce96&year=' + String(movieYear) + '&language=ru';
-                                } else {
-                                    url = Lampa.Utils.protocol() + 'tmdb.'+ Lampa.Manifest.cub_domain +'/3/search/tv?query=' + encodeURIComponent(movieTitle) + '&api_key=4ef0d7355d9ffb5151e987764708ce96&year=' + String(movieYear) + '&language=ru';
-                                }
-                                console.log('Kinorium', 'Searching TMDB by title: ' + url);
-                            }
-                            
-                            // Запрос к TMDB
-                            network.silent(url, function(tmdbData) {
-                                if(tmdbData) {
-                                    var movieItem = null;
-                                    
-                                    if (movieTMDBid) {
-                                        // Если искали по ID
-                                        movieItem = tmdbData;
-                                    } else {
-                                        // Если искали по названию
-                                        if (tmdbData.movie_results && tmdbData.movie_results[0]) {
-                                            movieItem = tmdbData.movie_results[0];
-                                        } else if(tmdbData.tv_results && tmdbData.tv_results[0]) {
-                                            movieItem = tmdbData.tv_results[0];
-                                        } else if(tmdbData.results && tmdbData.results[0]) {
-                                            movieItem = tmdbData.results[0];
-                                        }
-                                    }
-                                    
-                                    if(movieItem) {
-                                        console.log('Kinorium', 'TMDB id found: ' + movieItem.id + ' for kinorium id: ' + String(m.id));
-
-                                        var movieDateStr = movieItem.release_date || movieItem.first_air_date;
-                                        var movieDate = new Date(movieDateStr);
-
-                                        if (!movieDateStr || movieDate <= new Date()) {                                            
-                                            movieItem.kinorium_id = String(m.id);
-                                            movieItem.source = "tmdb";
-                                            kinoriumMovies = Lampa.Storage.get('kinorium_movies', []);
-                                            kinoriumMovies.unshift(movieItem);
-                                            Lampa.Storage.set('kinorium_movies', JSON.stringify(kinoriumMovies));
-                                        } else {
-                                            console.log('Kinorium', 'Movie or TV with kinorium id ' + String(m.id) + ' not released yet, release date:', movieDate);    
-                                            if (Lampa.Storage.get('kinorium_add_to_favorites', false)) {
-                                                Lampa.Favorite.add('wath', movieItem, 100);
-                                            }
-                                        }
-                                    } else {
-                                        console.log('Kinorium', 'No TMDB result found for ' + movieTitle + ', ' + movieYear, tmdbData);
-                                    }
-                                } else {
-                                    console.log('Kinorium', 'No TMDB data received for: ' + movieTitle);
-                                }
-                                calculateProgress(receivedMoviesCount, processedItems++);
-                            }, function(tmdbError) {
-                                console.log('Kinorium', 'TMDB request error:', tmdbError);
-                                calculateProgress(receivedMoviesCount, processedItems++);
-                            });
-                        } else {
-                            // Если Alloha не нашла фильм, пробуем напрямую в TMDB
-                            console.log('Kinorium', 'Alloha found nothing, searching TMDB directly');
-                            
-                            var url;
-                            if (movieType === 'movie') {
-                                url = Lampa.Utils.protocol() + 'tmdb.'+ Lampa.Manifest.cub_domain +'/3/search/movie?query=' + encodeURIComponent(movieTitle) + '&api_key=4ef0d7355d9ffb5151e987764708ce96&year=' + String(movieYear) + '&language=ru';
-                            } else {
-                                url = Lampa.Utils.protocol() + 'tmdb.'+ Lampa.Manifest.cub_domain +'/3/search/tv?query=' + encodeURIComponent(movieTitle) + '&api_key=4ef0d7355d9ffb5151e987764708ce96&year=' + String(movieYear) + '&language=ru';
-                            }
-                            
-                            network.silent(url, function(tmdbData) {
-                                if(tmdbData) {
-                                    var movieItem = null;
-                                    
-                                    if (tmdbData.movie_results && tmdbData.movie_results[0]) {
-                                        movieItem = tmdbData.movie_results[0];
-                                    } else if(tmdbData.tv_results && tmdbData.tv_results[0]) {
-                                        movieItem = tmdbData.tv_results[0];
-                                    } else if(tmdbData.results && tmdbData.results[0]) {
-                                        movieItem = tmdbData.results[0];
-                                    }
-                                    
-                                    if(movieItem) {
-                                        console.log('Kinorium', 'TMDB id found: ' + movieItem.id + ' for kinorium id: ' + String(m.id));
-                                        movieItem.kinorium_id = String(m.id);
-                                        movieItem.source = "tmdb";
-                                        kinoriumMovies = Lampa.Storage.get('kinorium_movies', []);
-                                        kinoriumMovies.unshift(movieItem);
-                                        Lampa.Storage.set('kinorium_movies', JSON.stringify(kinoriumMovies));
-                                    } else {
-                                        console.log('Kinorium', 'No TMDB result found for ' + movieTitle + ', ' + movieYear);
-                                    }
-                                }
-                                calculateProgress(receivedMoviesCount, processedItems++);
-                            }, function(tmdbError) {
-                                console.log('Kinorium', 'TMDB direct search error:', tmdbError);
-                                calculateProgress(receivedMoviesCount, processedItems++);
-                            });
-                        }
-                    }, function(allohaError) {
-                        console.log('Kinorium', 'Alloha request error:', allohaError);
-                        
-                        // Если Alloha не сработала, пробуем напрямую в TMDB
-                        var url;
-                        if (movieType === 'movie') {
-                            url = Lampa.Utils.protocol() + 'tmdb.'+ Lampa.Manifest.cub_domain +'/3/search/movie?query=' + encodeURIComponent(movieTitle) + '&api_key=4ef0d7355d9ffb5151e987764708ce96&year=' + String(movieYear) + '&language=ru';
-                        } else {
-                            url = Lampa.Utils.protocol() + 'tmdb.'+ Lampa.Manifest.cub_domain +'/3/search/tv?query=' + encodeURIComponent(movieTitle) + '&api_key=4ef0d7355d9ffb5151e987764708ce96&year=' + String(movieYear) + '&language=ru';
-                        }
-                        
-                        network.silent(url, function(tmdbData) {
-                            if(tmdbData) {
-                                var movieItem = null;
-                                
-                                if (tmdbData.movie_results && tmdbData.movie_results[0]) {
-                                    movieItem = tmdbData.movie_results[0];
-                                } else if(tmdbData.tv_results && tmdbData.tv_results[0]) {
-                                    movieItem = tmdbData.tv_results[0];
-                                } else if(tmdbData.results && tmdbData.results[0]) {
-                                    movieItem = tmdbData.results[0];
-                                }
-                                
-                                if(movieItem) {
-                                    console.log('Kinorium', 'TMDB id found: ' + movieItem.id + ' for kinorium id: ' + String(m.id));
-                                    movieItem.kinorium_id = String(m.id);
-                                    movieItem.source = "tmdb";
-                                    kinoriumMovies = Lampa.Storage.get('kinorium_movies', []);
-                                    kinoriumMovies.unshift(movieItem);
-                                    Lampa.Storage.set('kinorium_movies', JSON.stringify(kinoriumMovies));
-                                } else {
-                                    console.log('Kinorium', 'No TMDB result found for ' + movieTitle + ', ' + movieYear);
-                                }
-                            }
-                            calculateProgress(receivedMoviesCount, processedItems++);
-                        }, function(tmdbError) {
-                            console.log('Kinorium', 'TMDB direct search error:', tmdbError);
-                            calculateProgress(receivedMoviesCount, processedItems++);
-                        });
-                    });
+    function parseKinoriumHTML(html) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const movies = [];
+        
+        const movieElements = doc.querySelectorAll('.statusWidgetData[data-movieId]');
+        
+        movieElements.forEach(element => {
+            const movieId = element.getAttribute('data-movieId');
+            const movieName = element.getAttribute('data-movieName');
+            
+            const titleElement = element.querySelector('.movie-title__text');
+            const russianTitle = titleElement ? titleElement.textContent.trim() : movieName;
+            
+            const smallElement = element.querySelector('small');
+            let originalTitle = '';
+            let year = '';
+            
+            if (smallElement) {
+                const smallText = smallElement.textContent.trim();
+                const lastCommaIndex = smallText.lastIndexOf(',');
+                if (lastCommaIndex !== -1) {
+                    originalTitle = smallText.substring(0, lastCommaIndex).trim();
+                    year = smallText.substring(lastCommaIndex + 1).trim();
                 } else {
-                    console.log('Kinorium', 'Reading data from local storage for movie: ' + String(m.id))
-                    calculateProgress(receivedMoviesCount, processedItems++);
+                    originalTitle = smallText;
                 }
-            })
-        } else {
-            Lampa.Noty.show('Невозможно обработать данные, полученные от Кинориума');
-            console.log('Kinorium', 'processKinoriumData - ');
-            console.log('Kinorium', data);
+            }
+            
+            const isSerial = element.querySelector('.status-list__serial_text') !== null;
+            
+            movies.push({
+                kinorium_id: movieId,
+                russianTitle: russianTitle,
+                originalTitle: originalTitle,
+                year: year,
+                isSerial: isSerial,
+                timestamp: element.getAttribute('data-timestamp')
+            });
+        });
+        
+        return movies;
+    }
+
+    function processKinoriumData(html) {
+        const movies = parseKinoriumHTML(html);
+            
+        if(movies.length == 0) {
+            Lampa.Noty.show('В списке "Буду смотреть" Кинориума нет фильмов');
+            return;
         }
+
+        var kinoriumMovies = Lampa.Storage.get('kinorium_movies', []);
+        const receivedMovieIds = new Set(movies.map(m => String(m.kinorium_id)));
+        
+        kinoriumMovies = kinoriumMovies.filter(movie => receivedMovieIds.has(String(movie.kinorium_id)));
+        Lampa.Storage.set('kinorium_movies', JSON.stringify(kinoriumMovies));
+        
+        let processedItems = 1;
+        
+        movies.forEach(m => {
+            const existsInLocalStorage = kinoriumMovies.some(km => km.kinorium_id === String(m.kinorium_id));
+            
+            if (!existsInLocalStorage) {
+                const movieType = m.isSerial ? 'tv' : 'movie';
+                const searchTitle = m.originalTitle || m.russianTitle;
+                
+                var url = Lampa.Utils.protocol() + 'tmdb.'+ Lampa.Manifest.cub_domain +'/3/search/' + movieType + 
+                         '?query=' + encodeURIComponent(searchTitle) + 
+                         '&api_key=4ef0d7355d9ffb5151e987764708ce96' + 
+                         (m.year ? '&year=' + String(m.year) : '') + 
+                         '&language=ru';
+                
+                network.silent(url, function(data) {
+                    if(data && data.results && data.results[0]) {
+                        var movieItem = data.results[0];
+                        
+                        var movieDateStr = movieItem.release_date || movieItem.first_air_date;
+                        var movieDate = new Date(movieDateStr);
+
+                        if (movieDate <= new Date()) {                                            
+                            movieItem.kinorium_id = String(m.kinorium_id);
+                            movieItem.source = "tmdb";
+                            kinoriumMovies = Lampa.Storage.get('kinorium_movies', []);
+                            kinoriumMovies.unshift(movieItem);
+                            Lampa.Storage.set('kinorium_movies', JSON.stringify(kinoriumMovies));
+                        } else {
+                            if (Lampa.Storage.get('kinorium_add_to_favorites', false)) {
+                                Lampa.Favorite.add('wath', movieItem, 100);
+                            }
+                        }
+                        
+                    }
+                    calculateProgress(movies.length, processedItems++);
+                }, function(error) {
+                    calculateProgress(movies.length, processedItems++);
+                });
+            } else {
+                calculateProgress(movies.length, processedItems++);
+            }
+        });
     }
 
     function getKinoriumData() {
-        console.log('Kinorium', 'Starting to get Kinorium data...');
+        var userId = Lampa.Storage.get('kinorium_user_id', '');
         
-        var url = 'http://104.164.54.178:5000/lamporium/api/watchlist';
-        var payload = { user_id: "928543" };
+        if (!userId) {
+            Lampa.Noty.show('Укажите ID пользователя Кинориума в настройках');
+            return;
+        }
         
-        network.silent(url, function(data) {
-            processKinoriumData(data);
-        }, function(errorData) {
-            console.log('Kinorium', 'Error, kinorium backend', errorData);
-            Lampa.Noty.show('Ошибка при получении данных от Кинориума');
-        }, JSON.stringify(payload), {
-            type: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
+        var proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent('https://ru.kinorium.com/user/' + userId + '/watchlist/');
+        
+        network.silent(proxyUrl, function(html) {
+            processKinoriumData(html);
+        }, function(error) {
+            Lampa.Noty.show('Ошибка при получении данных с Кинориума');
         });
     }
 
     function full(params, oncomplete, onerror) {
-        var moviesFromStorage = Lampa.Storage.get('kinorium_movies', []);
-        console.log('Kinorium', 'Returning ' + moviesFromStorage.length + ' movies from storage');
-        
+        var userId = Lampa.Storage.get('kinorium_user_id', '');
+        if(userId) {
+            getKinoriumData();
+        }
         oncomplete({
             "secuses": true,
             "page": 1,
-            "results": moviesFromStorage
+            "results": Lampa.Storage.get('kinorium_movies', [])
         });
-        
-        getKinoriumData();
     }
 
     function clear() {
         network.clear();
     }
-    
     var Api = {
         full: full,
         clear: clear
@@ -260,6 +168,33 @@
         return comp;
     }
 
+    // Функция для ввода ID пользователя через диалоговое окно
+    function inputUserId(title) {
+        var currentUserId = Lampa.Storage.get('kinorium_user_id', '');
+        
+        Lampa.Input.edit({
+            free: true,
+            title: title,
+            nosave: true,
+            value: currentUserId,
+            layout: 'default',
+            keyboard: 'lampa'
+        }, function(input) {
+            if (input) {
+                Lampa.Storage.set('kinorium_user_id', input);
+                Lampa.Noty.show('ID пользователя установлен');
+                
+                // Обновляем отображение в настройках
+                setTimeout(function() {
+                    var element = $('div[data-name="kinorium_set_user_id"]');
+                    if (element.length) {
+                        element.find('.settings-param__name').text('ID: ' + input);
+                    }
+                }, 100);
+            }
+        });
+    }
+
     function startPlugin() {
         var manifest = {
             type: 'video',
@@ -268,8 +203,7 @@
             description: '',
             component: 'kinorium'
         };
-        
-        Lampa.Manifest.plugins = manifest;
+        Lampa.Manifest.plugins.push(manifest);
         Lampa.Component.add('kinorium', component);
 
         function add() {
@@ -284,13 +218,15 @@
             });
             $('.menu .menu__list').eq(0).append(button);
         }
-        
         if(window.appready) add();
         else {
             Lampa.Listener.follow('app', function(e) {
                 if(e.type == 'ready') add();
             });
         }
+
+        // SETTINGS
+        window.lampa_settings = window.lampa_settings || {};
         
         if(!window.lampa_settings.kinorium) {
             Lampa.SettingsApi.addComponent({
@@ -306,7 +242,34 @@
                 type: 'title'
             },
             field: {
-                name: 'Список Буду смотреть',
+                name: 'Аккаунт',
+            }
+        });
+        
+        // Заменяем текстовое поле на кнопку с диалоговым вводом
+        var currentUserId = Lampa.Storage.get('kinorium_user_id', '');
+        Lampa.SettingsApi.addParam({
+            component: 'kinorium',
+            param: {
+                type: 'button',
+                name: 'kinorium_set_user_id'
+            },
+            field: {
+                name: currentUserId ? 'ID: ' + currentUserId : 'Установить ID пользователя',
+                description: 'Нажмите чтобы установить ваш ID пользователя Кинориум'
+            },
+            onChange: function() {
+                inputUserId('Введите ID пользователя Кинориум');
+            }
+        });
+        
+        Lampa.SettingsApi.addParam({
+            component: 'kinorium',
+            param: {
+                type: 'title'
+            },
+            field: {
+                name: 'Список "Буду смотреть"',
             }
         });
         
@@ -321,7 +284,22 @@
                 name: 'Добавлять в Избранное',
                 description: 'Будущие, еще не вышедшие релизы добавляются в список Позже'
             }
-        });        
+        });
+        
+        Lampa.SettingsApi.addParam({
+            component: 'kinorium',
+            param: {
+                type: 'button',
+                name: 'kinorium_refresh'
+            },
+            field: {
+                name: 'Обновить список',
+                description: 'Загрузить актуальный список фильмов'
+            },
+            onChange: function() {
+                getKinoriumData();
+            }
+        });
         
         Lampa.SettingsApi.addParam({
             component: 'kinorium',
@@ -333,12 +311,17 @@
                 name: 'Очистить кэш фильмов',
                 description: 'Необходимо при возникновении проблем'
             },
-            onChange: () => {
+            onChange: function() {
                 Lampa.Storage.set('kinorium_movies', []);
                 Lampa.Noty.show('Кэш Кинориума очищен');
             }
-        });        
+        });
+        
+        window.lampa_settings.kinorium = true;
     }
     
-    if(!window.kinorium_ready) startPlugin();
+    if(!window.kinorium_ready) {
+        window.kinorium_ready = true;
+        startPlugin();
+    }
 })();
