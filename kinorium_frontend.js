@@ -1,22 +1,15 @@
 (function() {
     'use strict';
 
-    var network = new Lampa.Reguest();
+    // network instance will be created where needed (after appready)
     // fallback базовый адрес API бекенда (пользовательская настройка через Settings)
     var API_BASE = (Lampa.Storage.get('kinorium_api_base') || 'https://stepan163.ru').replace(/\/$/, '');
 
     // --- Вспомогательные функции ---
     function getTmdbBase() {
         try {
-            var cub = Lampa.Manifest && Lampa.Manifest.cub_domain ? Lampa.Manifest.cub_domain : '';
-            if (cub && typeof cub === 'string' && cub.length) {
-                // если cub_domain задан, используем его (с протоколом)
-                var proto = ('https://');
-                return proto + 'tmdb.' + cub;
-            } else {
-                // fallback — стабильный публичный хост
-                return 'https://tmdb.cub.red';
-            }
+            var proto = (typeof location !== 'undefined' && location.protocol === 'http:') ? 'http://' : 'https://';
+            return proto + 'tmdb.cub.red';
         } catch (e) {
             return 'https://tmdb.cub.red';
         }
@@ -33,7 +26,7 @@
     function requestKinoriumUserId(callback) {
         Lampa.Input.edit({
             free: true,
-            title: 'Введите ID пользователя Кинориума5',
+            title: 'Введите ID пользователя Кинориума6',
             nosave: true,
             value: '',
             layout: 'default',
@@ -60,6 +53,7 @@
     }
 
     function processKinoriumDataFromJson(payload) {
+        var network = new Lampa.Reguest();
         try {
             var movies = Array.isArray(payload && payload.movies) ? payload.movies : [];
             if (movies.length == 0) {
@@ -88,7 +82,7 @@
                 if (!existsInLocalStorage) {
                     const movieType = isSerial ? 'tv' : 'movie';
                     const searchTitle = originalTitle || russianTitle || '';
-                    var url = 'https://tmdb.cub.red/3/search/' + movieType +
+                    var url = tmdbBase + '/3/search/' + movieType +
                         '?query=' + encodeURIComponent(searchTitle) +
                         '&api_key=4ef0d7355d9ffb5151e987764708ce96' +
                         (year ? '&year=' + year : '') +
@@ -131,7 +125,7 @@
                     }, function(err) {
                         console.error('Kinorium', 'TMDB request error:', err, 'URL:', url);
                         calculateProgress(movies.length, processedItems++);
-                    }, false, { type: 'get' });
+                    }, null, { type: 'get' });
                 } else {
                     calculateProgress(movies.length, processedItems++);
                 }
@@ -143,6 +137,7 @@
     }
 
     function getKinoriumData() {
+        var network = new Lampa.Reguest();
         var userId = Lampa.Storage.get('kinorium_user_id', '');
         if (!userId) {
             requestKinoriumUserId(getKinoriumData);
@@ -181,9 +176,13 @@
     function full(params, oncomplete, onerror) {
         var userId = Lampa.Storage.get('kinorium_user_id', '');
         if (userId) {
-            getKinoriumData();
+            if (window.appready) getKinoriumData();
+            else Lampa.Listener.follow('app', function(e) { if (e.type == 'ready') getKinoriumData(); });
         } else {
-            requestKinoriumUserId(function() { getKinoriumData(); });
+            requestKinoriumUserId(function() {
+                if (window.appready) getKinoriumData();
+                else Lampa.Listener.follow('app', function(e) { if (e.type == 'ready') getKinoriumData(); });
+            });
         }
 
         // сразу возвращаем результат из локального кэша (как было в исходнике)
