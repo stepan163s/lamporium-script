@@ -33,7 +33,7 @@
     function requestKinoriumUserId(callback) {
         Lampa.Input.edit({
             free: true,
-            title: 'Введите ID пользователя Кинориума3',
+            title: 'Введите ID пользователя Кинориума4',
             nosave: true,
             value: '',
             layout: 'default',
@@ -156,8 +156,8 @@
             return;
         }
 
-        var url = API_BASE + '/lamporium/api/watchlist';
-        var payload = { user_id: userId };
+        var url = 'http://104.164.54.178:5000/lamporium/api/watchlist';
+        var payload = { user_id: '928543' };
 
         console.log('Kinorium', 'Requesting kinorium backend:', url, 'payload:', payload);
 
